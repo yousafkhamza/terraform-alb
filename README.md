@@ -1,13 +1,11 @@
-# Creating VPC and Application Load Balancer using Terraform
+# Creating Application Load Balancer using Terraform
 
 Terraform is a tool for building infrastructure with various technologies including Amazon AWS, Microsoft Azure, Google Cloud, and vSphere.
-Here is a simple document on how to use Terraform to build an AWS VPC with Subnets, Network ACL for the VPC along with Application load balancer so that gigingeorge.online will go to target group 1 (tg-1) and blog.gigingeorge.online will go to target group 2 (tg-2).
+Here is a simple document on how to use Terraform to build an AWS ALB Application load balancer.
 
-We will be creating 1 VPC with 3  Public subnet,  Internet Gateway,  Route Tables, 2 Target group,  Autoscaling group and lauch configuration
 ## Features
 
-- Easy to customise and use as the Terraform modules are created using variables,allowing the module to be customized without altering the module's own source code, and allowing modules to be shared between different configurations.
-- Each subnet CIDR block created  automatically using cidrsubnet Function 
+- Easy to customise with just a quick look with terrafrom code
 - AWS informations are defined using tfvars file and can easily changed
 - Project name is appended to the resources that are creating which will make easier to identify the resources.
 
@@ -66,200 +64,13 @@ provider "aws" {
 vim terraform.tfvars
 ```
 ```sh
-region = "< Desired region>"
+region = "Desired region"
 access_key = "IAM user access_key"
 secret_key = "IAM user secret_key"
-project = "<project name>"
-vpc_cidr = "<VPC cidr block>"
+project = " Your project name"
+vpc_cidr = "VPC cidr block"
 ```
 The Basic configuration for terraform aws is completed. Now we need to initialize the terraform using the loaded values
-#### Terraform initialisation
-```sh
-terraform  init
-```
-> Once the initialization completes, the terraform is will able to connect to our AWS console as per the privileges set on IAM user on the defined region. 
-
-Now we are going to create a VPC with 3 public subnets  with all it's dependancies.
-#### Create new VPC
-```sh
-vim main.tf
-```
-```sh
-data "aws_availability_zones" "AZ" {
-  state = "available"
-}
-```
-> This will gather all the availability zones within our region.
-
-#### To create VPC
-```sh
-resource "aws_vpc" "vpc" {
-    
-  cidr_block           = var.vpc_cidr
-  instance_tenancy     = "default"
-  enable_dns_support   = true
-  enable_dns_hostnames = true
-  tags = {
-    Name = "${var.project}-vpc"
-  }
-}
-```
- > Note : the format is  resource "resource_name" "local-resource-identifier" {}
- 
- > local resource identfier is the name in which the deatils of defined resource is stored on tfstate file
- > tfstate file : This state is used by Terraform to map real world resources to your configuration, keep track of metadata, and to improve performance for large infrastructures. This state is stored by default in a local file named "terraform. tfstate"
-
-#### To create InterGateWay For VPC
-```sh
-resource "aws_internet_gateway" "igw" {
-    
-  vpc_id = aws_vpc.vpc.id
-  tags = {
-    Name = "${var.project}-igw"
-  }
-}
-```
-> Note : vpc_id = aws_vpc.vpc.id  >> this refers to ID of VPC create with name "vpc"
-
-Now we need to create Public subnets. 
-
-> PUBLIC SUBNET :  If a subnet's traffic is routed to an internet gateway, the subnet is known as a public subnet. 
-
-#### Creating public subnets
-```sh
-resource "aws_subnet" "public1" {
-    
-  vpc_id                   = aws_vpc.vpc.id
-  cidr_block               = cidrsubnet(var.vpc_cidr, 2, 0)
-  availability_zone        = element(data.aws_availability_zones.AZ.names,0)
-  map_public_ip_on_launch  = true
-  tags = {
-    Name = "${var.project}-public1"
-  }
-}
-```
-```sh
-resource "aws_subnet" "public2" {
-    
-  vpc_id                   = aws_vpc.vpc.id
-  cidr_block               = cidrsubnet(var.vpc_cidr, 2, 1)
-  availability_zone        = element(data.aws_availability_zones.AZ.names,1)
-  map_public_ip_on_launch  = true
-  tags = {
-    Name = "${var.project}-public2"
-  }
-}
-```
-```sh
-resource "aws_subnet" "public3" {
-    
-  vpc_id                   = aws_vpc.vpc.id
-  cidr_block               = cidrsubnet(var.vpc_cidr, 2, 2)
-  availability_zone        = element(data.aws_availability_zones.AZ.names,2)
-  map_public_ip_on_launch  = true
-  tags = {
-    Name = "${var.project}-public-3"
-  }
-}
-```
-
-
-> cidrsubnet calculates a subnet address within given IP network address prefix.
-```sh
-> cidrsubnet(prefix, newbits, netnum) 
-```
->   -  prefix must be given in CIDR notation
->   - newbits is the number of additional bits with which to extend the prefix. For example, if given a prefix ending in /16 and a newbits value of 4, the resulting subnet address will have length /20.
->    - netnum is a whole number that can be represented as a binary integer with no more than newbits binary digits, which will be used to populate the additional bits added to the prefix.
-
-> element retrieves a single element from a list.
-```sh
- element(list, index)
-```
-  - The index is zero-based. This function produces an error if used with an empty list. The index must be a non-negative integer.
-
-Now we need to create route tables. 
-
-A route table contains a set of rules, called routes, that are used to determine where network traffic from your subnet or gateway is directed.
-- Each subnet in your VPC must be associated with a route table, which controls the routing for the subnet (subnet route table).
-- A subnet can only be associated with one route table at a time, but you can associate multiple subnets with the same subnet route table.
-- Every route table contains a local route for communication within the VPC.
-
-> The route table for Public subnet should be assigned to interget gatway 
-
-#### Creating Route table 
-
-```sh
-resource "aws_route_table" "Route" {
-    
-  vpc_id = aws_vpc.vpc.id
-
-  route {
-    cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.igw.id
-  }
-
-  tags = {
-    Name = "${var.project}-Route"
-  }
-}
-```
-The created Route tables must be associated to Subnets
-#### Route Table association
-```sh
-resource "aws_route_table_association" "public1" {        
-  subnet_id      = aws_subnet.public1.id
-  route_table_id = aws_route_table.Route.id
-}
-
-resource "aws_route_table_association" "public2" {      
-  subnet_id      = aws_subnet.public2.id
-  route_table_id = aws_route_table.Route.id
-}
-
-resource "aws_route_table_association" "public3" {       
-  subnet_id      = aws_subnet.public3.id
-  route_table_id = aws_route_table.Route.id
-}
-```
-
-
-The VPC creation has been completed. 
-
-Now we need the output of created resources 
-
-#### Creating output variables
-```sh
-
-output "VPC" {
-value = aws_vpc.vpc.id
-}
-output "Internet_Gateway" {
-value = aws_internet_gateway.igw.id
-
-output "Public_Route_table" {
-value = aws_route_table.public.id
-}
-```
-#### Terraform Validation
-> This will check for any errors on the source code
-
-```sh
-terraform validate
-```
-#### Terraform Plan
-> The terraform plan command provides a preview of the actions that Terraform will take in order to configure resources per the configuration file. 
-
-```sh
-terraform plan
-```
-#### Terraform apply
-> This will execute the tf file we created
-
-```sh
-terraform apply
-```
-The new VPC with name VPC and 3 public subnets has been created. 
 
 ## Creating Application Load Balancer
 > A load balancer serves as the single point of contact for clients. The load balancer distributes incoming application traffic across multiple targets, such as EC2 instances, in multiple Availability Zones.
@@ -278,25 +89,42 @@ The following diagram illustrates the basic components.
 
 ```sh
 data "aws_subnet_ids" "default" {
-  vpc_id = aws_vpc.vpc.id
+  vpc_id = "existing-vpc-id"  <===================== Please note that your existing VPC ID.
   }
 ```  
 
 ##### Create a security group for load balancer 
+
 ```sh
-resource "aws_security_group" "alb-sec" {
-    
-  name        = "alb-sec"
-  description = "allows 80 for inbound and all for outbound"
+resource "aws_security_group" "sg-web" {
+  name        = "sgweb"
+  description = "Allow 80,443,22"
   
   ingress {
+    description      = "HTTPS"
     from_port        = 80
     to_port          = 80
-    protocol         = "-1"
-    cidr_blocks      = ["0.0.0.0/0"]
+    protocol         = "tcp"
+   cidr_blocks      = ["0.0.0.0/0"]
     ipv6_cidr_blocks = ["::/0"]
   }
-    
+  ingress {
+    description      = "HTTPS"
+    from_port        = 443
+    to_port          = 443
+    protocol         = "tcp"
+   cidr_blocks      = ["0.0.0.0/0"]
+    ipv6_cidr_blocks = ["::/0"]
+  }
+  ingress {
+    description      = "SSH"
+    from_port        = 22
+    to_port          = 22
+    protocol         = "tcp"
+   cidr_blocks      = ["0.0.0.0/0"]
+    ipv6_cidr_blocks = ["::/0"]
+  }
+
   egress {
     from_port        = 0
     to_port          = 0
@@ -306,7 +134,10 @@ resource "aws_security_group" "alb-sec" {
   }
 
   tags = {
-    Name = "alb-sec"
+    Name = "webserver"
+  }
+    lifecycle {
+    create_before_destroy = true
   }
 }
 ```
@@ -314,9 +145,43 @@ resource "aws_security_group" "alb-sec" {
 #### Create TargetGroup For Application LoadBalancer
 > Lets's create 2 target group so that we can forward the traffic 
 
+> Target Group One
 ```sh
-resource "aws_lb_target_group" "tg-1" {
-  name     = "lb-tg1"
+resource "aws_lb_target_group" "tg-one" {
+  name     = "lb-tg-one"
+  port     = 80
+  protocol = "HTTP"
+  vpc_id   = aws_vpc.vpc.id
+  load_balancing_algorithm_type = "round_robin"
+  deregistration_delay = 60
+  stickiness {
+    enabled = false
+    type    = "lb_cookie"
+    cookie_duration = 60
+  }
+
+  health_check {
+    healthy_threshold   = 2
+    unhealthy_threshold = 2
+    interval            = 30
+    path                = "/"
+    protocol            = "HTTP"
+    matcher             = 200
+    
+  }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+```
+
+> Target Group Two
+
+```sh
+resource "aws_lb_target_group" "tg-two" {
+  name     = "lb-tg-two"
   port     = 80
   protocol = "HTTP"
   vpc_id   = aws_vpc.vpc.id
@@ -337,37 +202,6 @@ resource "aws_lb_target_group" "tg-1" {
     matcher             = 200
 
   }
-  lifecycle {
-    create_before_destroy = true
-  }
-}
-```
-Traget group-2
-
-```sh
-resource "aws_lb_target_group" "tg-2" {
-  name     = "lb-tg2"
-  port     = 80
-  protocol = "HTTP"
-  vpc_id   = aws_vpc.vpc.id
-  load_balancing_algorithm_type = "round_robin"
-  deregistration_delay = 60
-  stickiness {
-    enabled = false
-    type    = "lb_cookie"
-    cookie_duration = 60
-  }
-
-  health_check {
-    healthy_threshold   = 2
-    unhealthy_threshold = 2
-    interval            = 30
-    path                = "/"
-    protocol            = "HTTP"
-    matcher             = 200
-
-  }
-
 
   lifecycle {
     create_before_destroy = true
@@ -375,35 +209,40 @@ resource "aws_lb_target_group" "tg-2" {
 }
 ```
 
-> Note : lifecycle is a nested block that can appear within a resource block. 
-> create_before_destroy is a meta-argument  that will create new replacement object first, and the prior object is destroyed after the replacement is created.
+> _Note : lifecycle is a nested block that can appear within a resource block._ 
+> _create_before_destroy is a meta-argument  that will create new replacement object first, and the prior object is destroyed after the replacement is created._
 
 ##### Create Application LoadBalancer
 ```sh
-resource "aws_lb" "mylb" {
-  name               = "MY-LB"
+resource "aws_lb" "lb" {
+  name               = "lb"
   internal           = false
   load_balancer_type = "application"
-  security_groups    = [aws_security_group.alb-sec.id]
+  security_groups    = [aws_security_group.alltraffic.id]
   subnets            = data.aws_subnet_ids.default.ids
   enable_deletion_protection = false
-  depends_on = [ aws_lb_target_group.tg-1 ]
+  depends_on = [ aws_lb_target_group.tg-one ]
   tags = {
-     Name = "MY-LB"
+     Name = "${var.project}-lb"
+   }
 }
-}
-output "ALB-Endpoint" {
-  value = aws_lb.mylb.dns_name
-}
+
+output "alb-endpoint" {
+  value = aws_lb.lb.dns_name
+} 
 ```
-##### Creating http listener of application loadbalancer
+##### Creating http listener of application loadbalancer with default action.
 ```sh
 resource "aws_lb_listener" "listner" {
-
-  load_balancer_arn = aws_lb.mylb.id
+  
+  load_balancer_arn = aws_lb.lb.id
   port              = 80
   protocol          = "HTTP"
-  # defualt action of the target group.
+  
+#-------------------------------------
+#defualt action of the target group.
+#-------------------------------------
+
   default_action {
     type = "fixed-response"
     fixed_response {
@@ -411,44 +250,52 @@ resource "aws_lb_listener" "listner" {
       message_body = " No such Site Found"
       status_code  = "200"
    }
-  }
-
+}
+    
   depends_on = [  aws_lb.mylb ]
 }
 ```
 > Note : Use the depends_on meta-argument to handle hidden resource or module dependencies that Terraform can't automatically infer.
 
-##### forward gigingeorge.online to targetgroup 1 (tg-1)
+##### forward first hostname to targetgroup-one (eg: one-yousaf.com)
 ```sh
-resource "aws_lb_listener_rule" "rule" {
+#-------------------------------------
+#First forwording rule
+#-------------------------------------
+
+resource "aws_lb_listener_rule" "rule-one" {
 
   listener_arn = aws_lb_listener.listner.id
-  priority     = 10
+  priority     = 5
+
   action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.tg-1.arn
+    target_group_arn = aws_lb_target_group.tg-one.arn
   }
+
   condition {
     host_header {
-      values = ["gigingeorge.online"]
+      values = ["first-host-name-"]
     }
   }
 }
 ```
 
-##### forward blog.gigingeorge.online to targetgroup 2 (tg-2)
+##### forward second hostname to targetgroup-two (eg: two-yousaf.com)
 ```sh
-resource "aws_lb_listener_rule" "rule2" {
-
+resource "aws_lb_listener_rule" "rule-two" {
+    
   listener_arn = aws_lb_listener.listner.id
-  priority     = 10
+  priority     = 5
+
   action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.tg-2.arn
+    target_group_arn = aws_lb_target_group.tg-two.arn
   }
+
   condition {
     host_header {
-      values = ["blog.gigingeorge.online"]
+      values = ["-second-host-name-"]
     }
   }
 }
@@ -457,62 +304,86 @@ Next, we need to create Launch configuration so that we can create Auto scaling 
 
 #####  Launch Configuration
 ```sh
-resource "aws_launch_configuration" "launch" {
-  image_id      = "ami-077e31c4939f6a2f3"
-  instance_type = "t2.micro"
-security_groups = [ aws_security_group.alb-sec.id ]
-  user_data = file("launch-1.sh")
+#-------------------------------------
+#First Lauch Configuration
+#-------------------------------------
+
+resource "aws_launch_configuration" "launch-one" {
+  image_id          = "-choose-a-AMI"
+  instance_type     = "-instance-type-"
+  security_groups   = [ aws_security_group.sg-web.id ]
+  user_data         = file("launch-conf.sh")
 
   lifecycle {
     create_before_destroy = true
   }
 }
+
+#-------------------------------------
+#Second Lauch configuration
+#-------------------------------------
+
+resource "aws_launch_configuration" "launch-two" {
+  image_id        = "-choose-a-AMI"
+  instance_type   = "-Instance-type"
+  security_groups = [ aws_security_group.sg-web.id ]
+  user_data       = file("launch-conf.sh")
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+
 ```
 > Note : We are using file() to load user data.
 
-###### Create Auto Scaling Group
+###### Create Auto Scaling Group One with Lauch configuration one to Target group one
 ```sh
-resource "aws_autoscaling_group" "asg-1" {
+#-------------------------------------
+#First ASG with Lauch configuration one
+#-------------------------------------
 
-  launch_configuration    =  aws_launch_configuration.launch.id
+resource "aws_autoscaling_group" "asg-one" {
+
+  launch_configuration    = aws_launch_configuration.launch-one.id
   health_check_type       = "EC2"
   min_size                = var.asg_count
   max_size                = var.asg_count
   desired_capacity        = var.asg_count
-  vpc_zone_identifier       = [aws_subnet.public1.id, aws_subnet.public2.id, aws_subnet.public3.id ]
-  target_group_arns       = [ aws_lb_target_group.tg-1.arn ]
+  vpc_zone_identifier     = [-choose-public-subjet-one-,-choose-public-subjet-two-]
+  target_group_arns       = [ aws_lb_target_group.tg-one.arn ]
   tag {
     key = "Name"
     propagate_at_launch = true
-    value = "Asg-1"
+    value = "Asg-one"
   }
 
   lifecycle {
     create_before_destroy = true
   }
-```
-Second auto scaling group for tg-2
-```sh
 }
-resource "aws_autoscaling_group" "asg-2" {
+```
+###### Create Auto Scaling Group two with Lauch configuration two to Target group two
+```sh
+resource "aws_autoscaling_group" "asg-two" {
 
-  launch_configuration    =  aws_launch_configuration.launch.id
+  launch_configuration    = aws_launch_configuration.launch-two.id
   health_check_type       = "EC2"
   min_size                = var.asg_count
   max_size                = var.asg_count
   desired_capacity        = var.asg_count
-  vpc_zone_identifier       = [aws_subnet.public1.id, aws_subnet.public2.id, aws_subnet.public3.id]
-  target_group_arns       = [ aws_lb_target_group.tg-2.arn ]
+  vpc_zone_identifier     = [-choose-public-subjet-one-,-choose-public-subjet-two-]
+  target_group_arns       = [ aws_lb_target_group.tg-two.arn ]
   tag {
     key = "Name"
     propagate_at_launch = true
-    value = "Asg-2"
+    value = "asg-two"
   }
 
   lifecycle {
     create_before_destroy = true
   }
-
 }
 ```
 
@@ -527,7 +398,7 @@ vim variable-asg.tf
 ```
 We need to create 2 user data for launch configuration. 
 ```sh
-vim launch
+vim launch-conf.sh
 ```
 ```sh
 #!/bin/bash
@@ -545,7 +416,7 @@ service sshd restart
 yum install http php git -y
 systemctl start httpd
 systemctl enable httpd
-git clone https://github.com/gigingeorge/aws-elb-site  /var/website
+git clone https://github.com/yousafkhamza/aws-elb-site.git /var/website
 cp -r /var/website/*  /var/www/html/
 chown -R apache:apache /var/www/html/*
 ```
