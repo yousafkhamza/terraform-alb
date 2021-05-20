@@ -423,4 +423,23 @@ chown -R apache:apache /var/www/html/*
 
 > Note : I used the same launch configuration for both the ASG. However, I've inserted code so that it will show the hostname IP, so that we can identify from which target group it was loaded. 
 
+#### Terraform Validation
+> This will check for any errors on the source code
+
+```sh
+terraform validate
+```
+#### Terraform Plan
+> The terraform plan command provides a preview of the actions that Terraform will take in order to configure resources per the configuration file. 
+
+```sh
+terraform plan
+```
+#### Terraform apply
+> This will execute the tf file we created
+
+```sh
+terraform apply
+```
+
 
