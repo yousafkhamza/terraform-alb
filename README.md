@@ -1,4 +1,5 @@
 # Creating Application Load Balancer using Terraform
+[![Builds](https://travis-ci.org/joemccann/dillinger.svg?branch=master)](https://travis-ci.org/joemccann/dillinger)
 
 Terraform is a tool for building infrastructure with various technologies including Amazon AWS, Microsoft Azure, Google Cloud, and vSphere.
 Here is a simple document on how to use Terraform to build an AWS ALB Application load balancer.
